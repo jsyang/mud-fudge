@@ -1,0 +1,15 @@
+# YAML equivalent of grunt.registerTask(<taskname>, [<task1>, <task2>, ...])
+
+build:
+ - clean
+ - exec:mkdirBuild
+ - exec:copySrc
+ - cssmin
+ - uglify
+ - htmlmin
+
+default:
+  - build
+  - express
+  - watch
+
