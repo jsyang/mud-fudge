@@ -32,198 +32,141 @@ function Node(parent, depth, el) {
     return node;
 }
 
-var MAX_UPDATE_FRAMES      = 70;
+var MAX_UPDATE_FRAMES      = 30;
 var framesLeftForAnimation = MAX_UPDATE_FRAMES;
+
+var CHILD_LINE_OPTIONS = {
+    strokeStyle : 'black',
+    lineWidth   : '1px'
+};
+
+var PARENT_LINE_OPTIONS = {
+    strokeStyle : 'rgb(210,210,210)',
+    lineWidth   : '1px'
+};
 
 function NodeAnimate(node) {
     if (framesLeftForAnimation > 0) {
         CTX2D.clearRect(0, 0, window.innerWidth, window.innerHeight);
 
-        lines
-            .filter(function (line) {
-                return line !== node.parentLine && (line.start === node || line.end === node);
-            })
-            .forEach(LineUpdatePosition.bind(0, {
-                strokeStyle : 'black',
-                lineWidth   : '1px'
-            }));
-
-        NodeUpdatePosition(node);
-
-        if (node.parent) {
-            NodeUpdatePosition(node.parent);
-            LineUpdatePosition(
-                {
-                    strokeStyle : 'rgb(210,210,210)',
-                    lineWidth   : '1px'
-                },
-                node.parentLine
-            );
-        }
-        node.children.forEach(NodeUpdatePosition);
+        node.children
+            .concat(node.parent)
+            .concat(node)
+            .filter(Boolean)
+            .forEach(NodeUpdatePosition);
 
         framesLeftForAnimation--;
+    } else if (framesLeftForAnimation === 0) {
+
+        node.children
+            .concat(node.parent)
+            .concat(node)
+            .filter(Boolean)
+            .forEach(NodeUpdateStyle);
+
+        if (node.parent) {
+            LineUpdatePosition(PARENT_LINE_OPTIONS, node.parentLine);
+        }
+
+        node.children
+            .forEach(function (n) {
+                LineUpdatePosition(CHILD_LINE_OPTIONS, n.parentLine);
+            });
+
+        framesLeftForAnimation = -1;
+
     }
 }
 
-var VIEWPORT_REPULSE_FORCE = 10;
-var ATTRACT_FORCE          = 2;
-var REPULSE_FORCE          = 4;
-var NODE_RADIAL_SIZE       = 200;
-var ATTRACT_FACTOR         = 1 / 50000;
-var ATTRACT_FACTOR_1000    = 1 / 1000;
-var MAX_FORCE              = 0.1;
-var TIME_PERIOD            = 10;
-var DAMPENING_FACTOR       = 0.65;
-var CENTRE_FORCE           = 20;
+var MAX_FORCE        = 3;
+var TIME_PERIOD      = 40;
+var REPULSE_FORCE2   = 70;
+var ATTRACT_FORCE2   = 10;
+var FORCE_FACTOR     = 0.004;
+var DAMPENING_FACTOR = 0.35;
+
+// For numerical purposes to avoid division by 0
+var MIN_DISTANCE = 0.00000000001;
 
 function NodeGetForceVector(node) {
-    var dist;
-    var f;
-    var fx = 0;
-    var fy = 0;
-
-    var bounding = node.el.getBoundingClientRect();
-
-    // Repulsed by other nodes
+    var f          = { x : 0, y : 0 };
+    var bounding   = node.el.getBoundingClientRect();
+    var NODE_SIZE2 = bounding.width * bounding.width + bounding.height * bounding.height;
 
     function addRepulsiveForce(n) {
-        // Coulomb's Law
-        var x1 = n.x - node.x;
-        var y1 = n.y - node.y;
-        var theta;
-        var xsign;
+        var b                 = n.el.getBoundingClientRect();
+        var N_SIZE2           = b.width * b.width + b.height * b.height;
+        var REPULSE_THRESHOLD = NODE_SIZE2 + N_SIZE2;
 
-        var dist = Math.sqrt((x1 * x1) + (y1 * y1)) + 0.0000001;
-        if (Math.abs(dist) < NODE_RADIAL_SIZE) {
-            if (x1 === 0) {
-                theta = Math.PI * 0.5;
-                xsign = 0;
-            } else {
-                theta = Math.atan(y1 / x1);
-                xsign = x1 >= 0 ? 1 : -1;
-            }
+        var dx    = node.x - n.x + MIN_DISTANCE;
+        var dy    = node.y - n.y + MIN_DISTANCE;
+        var dist2 = (dx * dx) + (dy * dy) + MIN_DISTANCE;
 
-            // force is based on radial distance
-            f = (REPULSE_FORCE * NODE_RADIAL_SIZE) / (dist * dist);
-            fx += -f * Math.cos(theta) * xsign;
-            fy += -f * Math.sin(theta) * xsign;
+        if (dist2 < REPULSE_THRESHOLD) {
+            var sign  = dx > 0 ? 1 : -1;
+            var theta = Math.atan(dy / dx);
+            f.x += REPULSE_FORCE2 * REPULSE_THRESHOLD / dist2 * Math.cos(theta) * sign;
+            f.y += REPULSE_FORCE2 * REPULSE_THRESHOLD / dist2 * Math.sin(theta) * sign;
         }
     }
 
-    nodes
-        .filter(function (n) {
-            var viable = true;
+    function addAttractiveForce(n, isCenterForce) {
+        var b                 = n.el ? n.el.getBoundingClientRect() : { width : 0, height : 0 };
+        var N_SIZE2           = b.width * b.width + b.height * b.height;
+        var ATTRACT_THRESHOLD = NODE_SIZE2 + N_SIZE2;
 
-            viable &= n !== node;
-            viable &= Math.abs(n.depth - activeNode.depth) < 2;
-            viable &= !n.el.classList.contains('hide');
+        var dx    = node.x - n.x + MIN_DISTANCE;
+        var dy    = node.y - n.y + MIN_DISTANCE;
+        var dist2 = (dx * dx) + (dy * dy) + MIN_DISTANCE;
+        if (dist2 > ATTRACT_THRESHOLD || isCenterForce) {
+            var forceMultiplier = f.forceMultiplier || 1;
 
-            return viable;
-        })
-        .forEach(addRepulsiveForce);
-
-    if (node.parent) {
-        addRepulsiveForce(node.parent);
+            var sign  = dx > 0 ? 1 : -1;
+            var theta = Math.atan(dy / dx);
+            f.x -= ATTRACT_FORCE2 * Math.cos(theta) * dist2 * sign * forceMultiplier;
+            f.y -= ATTRACT_FORCE2 * Math.sin(theta) * dist2 * sign * forceMultiplier;
+        }
     }
-
-    // Add viewport boundary repulsion
-
-    // Left edge
-    dist = node.x + bounding.width * 0.5;
-    f    = (VIEWPORT_REPULSE_FORCE * NODE_RADIAL_SIZE) / (dist * dist);
-    fx += Math.min(2, f);
-
-    // Right edge
-    dist = window.innerWidth - dist;
-    f    = -(VIEWPORT_REPULSE_FORCE * NODE_RADIAL_SIZE) / (dist * dist);
-    fx += Math.max(-2, f);
-
-    // Top edge
-    dist = node.y + bounding.height * 0.5;
-    f    = (VIEWPORT_REPULSE_FORCE * NODE_RADIAL_SIZE) / (dist * dist);
-    fy += Math.min(2, f);
-
-    // Bottom edge
-    dist = (window.innerHeight - node.y);
-    f    = -(VIEWPORT_REPULSE_FORCE * NODE_RADIAL_SIZE) / (dist * dist);
-    fy += Math.max(-2, f);
-
-    // Attracted to nodes that we're linked to
-    lines
-        .filter(function (l) {
-            return l.start === node || l.end === node;
-        })
-        .forEach(function addAttractive(l) {
-            var otherEnd = null;
-
-            if (l.start === node) {
-                otherEnd = l.end;
-            } else if (l.end === node) {
-                otherEnd = l.start;
-            }
-
-            // Hooke's Law
-            var theta;
-            var xsign;
-            var x1 = (otherEnd.x - node.x);
-            var y1 = (otherEnd.y - node.y);
-            dist   = Math.sqrt((x1 * x1) + (y1 * y1));
-            if (Math.abs(dist) > 0) {
-                if (x1 === 0) {
-                    theta = Math.PI / 2;
-                    xsign = 0;
-                }
-                else {
-                    theta = Math.atan(y1 / x1);
-                    xsign = x1 >= 0 ? 1 : -1;
-                }
-
-                // force is based on radial distance
-                f = ATTRACT_FORCE * dist * ATTRACT_FACTOR;
-                fx += f * Math.cos(theta) * xsign;
-                fy += f * Math.sin(theta) * xsign;
-            }
-        });
 
     // Attracted to the center of the viewport if node is active
     if (activeNode === node) {
+        addAttractiveForce({
+            x               : (window.innerWidth - bounding.width) * 0.5,
+            y               : (window.innerHeight - bounding.height) * 0.5,
+            forceMultiplier : 2.2
+        }, true);
+    } else {
 
-        var x1 = window.innerWidth * 0.5 - node.x;
-        var y1 = window.innerHeight * 0.5 - node.y;
-        dist   = Math.sqrt((x1 * x1) + (y1 * y1));
-        if (Math.abs(dist) > 0) {
-            if (x1 === 0) {
-                var theta = Math.PI / 2;
-                var xsign = 0;
-            } else {
-                var theta = Math.atan(y1 / x1);
-                var xsign = x1 >= 0 ? 1 : -1;
-            }
+        nodes
+            .filter(function (n) {
+                var viable = true;
 
-            // force is based on radial distance
-            f = (0.1 * ATTRACT_FORCE * dist * CENTRE_FORCE) * ATTRACT_FACTOR_1000;
-            fx += f * Math.cos(theta) * xsign;
-            fy += f * Math.sin(theta) * xsign;
-        }
+                viable &= n !== node;
+                viable &= Math.abs(n.depth - activeNode.depth) < 2;
+                viable &= n.el.classList.contains('show');
+
+                return viable;
+            }).forEach(addRepulsiveForce);
+
+        // Attracted to connected nodes
+        node.children.concat(node.parent)
+            .filter(function (n) {
+                return n && n.el.classList.contains('show');
+            }).forEach(addAttractiveForce);
     }
 
-    if (Math.abs(fx) > MAX_FORCE) {
-        // todo: this isn't really max force. It's a dampener factor
-        fx = MAX_FORCE * (fx / Math.abs(fx));
+    if (Math.abs(f.x) > MAX_FORCE) {
+        f.x = f.x > 0 ? MAX_FORCE : -MAX_FORCE;
     }
-    if (Math.abs(fy) > MAX_FORCE) {
-        fy = MAX_FORCE * (fy / Math.abs(fy));
+
+    if (Math.abs(f.y) > MAX_FORCE) {
+        f.y = f.y > 0 ? MAX_FORCE : -MAX_FORCE;
     }
-    return {
-        x : fx,
-        y : fy
-    };
+
+    return f;
 }
 
-// updatePosition returns a boolean stating whether it's been static
 function NodeUpdatePosition(node) {
-
     var forces = NodeGetForceVector(node);
     node.dx += forces.x * TIME_PERIOD;
     node.dy += forces.y * TIME_PERIOD;
@@ -231,11 +174,14 @@ function NodeUpdatePosition(node) {
     node.dx *= DAMPENING_FACTOR;
     node.dy *= DAMPENING_FACTOR;
 
-    if (Math.abs(node.dx + node.dy) > 0.002) {
-        node.x += node.dx * TIME_PERIOD;
-        node.y += node.dy * TIME_PERIOD;
-        node.el.style.transform = 'translate(' + node.x + 'px, ' + node.y + 'px)';
+    if (Math.abs(node.dx + node.dy) > 0.1) {
+        node.x += node.dx * TIME_PERIOD * FORCE_FACTOR;
+        node.y += node.dy * TIME_PERIOD * FORCE_FACTOR;
     }
+}
+
+function NodeUpdateStyle(node) {
+    node.el.style.transform = 'translate(' + node.x + 'px, ' + node.y + 'px)';
 }
 
 function Line(options) {
@@ -277,7 +223,7 @@ function addLI(parent, depth, li) {
 
         if (children.length > 0) {
             children.forEach(addLI.bind(0, node, depth + 1));
-            node.el.classList.add('hasChildren');
+            node.el.setAttribute('data-has-children', 'true');
         }
     }
 }
@@ -290,11 +236,10 @@ function go() {
 }
 
 function hideAllNodes() {
-    nodes.forEach(function (n) {
-        n.el.classList.add('hide');
-        n.el.classList.remove('parent');
-    });
+    nodes.forEach(function (n) {n.el.className = '';});
 }
+
+var prevActiveNode;
 
 function setActiveNode(node) {
     if (node !== activeNode) {
@@ -302,27 +247,54 @@ function setActiveNode(node) {
 
         hideAllNodes();
 
-        node.el.classList.remove('hide');
-        node.el.classList.add('dark');
+        var pdx    = 0;
+        var pdy    = 0;
+        var pAngle = 0;
+        var sign   = 1;
+
+        node.el.className = "show light";
+        //node.x = window.innerWidth * 0.5;
+        //node.y = window.innerHeight * 0.5;
 
         if (node.parent) {
-            node.parent.el.classList.remove('hide');
-            node.parent.el.classList.add('parent');
+            node.parent.el.className = 'show parent';
+
+            pdx = node.parent.x - node.x + MIN_DISTANCE;
+            pdy = node.parent.y - node.y + MIN_DISTANCE;
+
+            sign = pdx > 0 ? 1 : -1;
+
+            pAngle = Math.atan(pdy / pdx);
         }
 
-        node
-            .children
-            .forEach(function (n) {
-                n.el.classList.remove('hide');
+        var CHILD_NODE_INITIAL_DISTANCE = 60;
+
+        var angleIncrement = 1.44 / Math.max(node.children.length - 1, 2);
+
+        node.children
+            .forEach(function (n, i) {
+                var newAngle;
+
                 n.x = node.x;
                 n.y = node.y;
+
+                if (n !== prevActiveNode) {
+                    newAngle = pAngle + 3.14 - 0.72 + i * angleIncrement;
+                    n.x += Math.cos(newAngle) * CHILD_NODE_INITIAL_DISTANCE * sign;
+                    n.y += Math.sin(newAngle) * CHILD_NODE_INITIAL_DISTANCE * sign;
+                } else {
+                    newAngle = pAngle;
+                    n.x += Math.cos(newAngle) * CHILD_NODE_INITIAL_DISTANCE * sign;
+                    n.y += Math.sin(newAngle) * CHILD_NODE_INITIAL_DISTANCE * sign;
+                }
+
+                n.el.className = "show";
+
+                NodeUpdateStyle(n);
             });
 
-        if (activeNode) {
-            activeNode.el.classList.remove('dark');
-        }
-
-        activeNode = node;
+        prevActiveNode = activeNode;
+        activeNode     = node;
 
         go();
         framesLeftForAnimation = MAX_UPDATE_FRAMES;

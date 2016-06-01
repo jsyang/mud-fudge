@@ -5,8 +5,8 @@ build:
  - exec:mkdirBuild
  - exec:copySrc
  - cssmin
- - uglify
- - htmlmin
+# - uglify
+# - htmlmin
 
 default:
   - build

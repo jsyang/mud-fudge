@@ -13,12 +13,12 @@ body {
 }
 
 li {
+    display             : block;
     cursor              : pointer;
     user-select         : none;
     -webkit-user-select : none;
     font-family         : sans-serif;
     color               : white;
-    display             : block;
     position            : absolute;
     top                 : 0;
     left                : 0;
@@ -26,13 +26,16 @@ li {
     background-color    : rgb(80, 80, 80);
     padding             : 0.6em;
     font-size           : 0.7em;
+    transition          : all 0.2s ease;
+    opacity             : 0;
+    pointer-events: none;
 }
 
 li.parent {
-    background-color: rgb(210,210,210);
+    background-color : rgb(210, 210, 210);
 }
 
-li.hasChildren::after {
+li[data-has-children="true"]::after {
     display       : block;
     content       : '';
     position      : absolute;
@@ -44,16 +47,17 @@ li.hasChildren::after {
     border-radius : 1em;
 }
 
-li.dark {
+li.light {
     background-color : rgb(160, 160, 160);
 }
 
-li.dark::after {
+li.light::after {
     background : orangered;
 }
 
-li.hide {
-    display : none;
+li.show {
+    opacity : 1;
+    pointer-events: all;
 }
 
 a {
