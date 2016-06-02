@@ -2,8 +2,6 @@ canvas {
     position : absolute;
     top      : 0;
     left     : 0;
-    width    : 100%;
-    height   : 100%;
 }
 
 body {
@@ -26,10 +24,16 @@ li {
     background-color    : rgb(80, 80, 80);
     padding             : 0.6em;
     font-size           : 0.7em;
-    transition          : all 0.2s ease;
+    transition          : opacity 0.2s ease;
     opacity             : 0;
-    pointer-events: none;
+    pointer-events      : none;
 }
+
+/*
+li::before {
+    content: attr(data-depth) ' ';
+}
+*/
 
 li.parent {
     background-color : rgb(210, 210, 210);
@@ -56,8 +60,8 @@ li.light::after {
 }
 
 li.show {
-    opacity : 1;
-    pointer-events: all;
+    opacity        : 1;
+    pointer-events : all;
 }
 
 a {
